@@ -50,7 +50,7 @@ class SignalizedJunctionLeftTurn(BasicScenario):
         self._brake_value = 0.5
         self._ego_distance = 110
         self._traffic_light = None
-        self._other_actor_transform = None
+        self._other_actor_transforms = []
         self._blackboard_queue_name = 'SignalizedJunctionLeftTurn/actor_flow_queue'
         self._queue = Blackboard().set(self._blackboard_queue_name, Queue())
         self._initialized = True
@@ -75,18 +75,16 @@ class SignalizedJunctionLeftTurn(BasicScenario):
         """
         Custom initialization
         """
-        self._other_actor_transform = config.other_actors[0].transform
-        first_vehicle_transform = carla.Transform(
-            carla.Location(config.other_actors[0].transform.location.x,
-                           config.other_actors[0].transform.location.y,
-                           config.other_actors[0].transform.location.z - 500),
-            config.other_actors[0].transform.rotation)
-        try:
-            first_vehicle = CarlaActorPool.request_new_actor(config.other_actors[0].model, self._other_actor_transform)
-        except RuntimeError as r:
-            raise r
-        first_vehicle.set_transform(first_vehicle_transform)
-        self.other_actors.append(first_vehicle)
+        for other_actor in config.other_actors:
+            self._other_actor_transforms.append(other_actor.transform)
+            vehicle_transform = carla.Transform(
+                    carla.Location(other_actor.transform.location.x,
+                        other_actor.transform.location.y,
+                        other_actor.transform.location.z),
+                    other_actor.transform.rotation)
+            vehicle = CarlaActorPool.request_new_actor(other_actor.model,
+                    vehicle_transform)
+            self.other_actors.append(vehicle)
 
     def _create_behavior(self):
         """
@@ -112,7 +110,7 @@ class SignalizedJunctionLeftTurn(BasicScenario):
         # adding flow of actors
         actor_source = ActorSource(
             self._world, ['vehicle.tesla.model3', 'vehicle.audi.tt'],
-            self._other_actor_transform, 15, self._blackboard_queue_name)
+            self._other_actor_transforms[0], 15, self._blackboard_queue_name)
         # destroying flow of actors
         actor_sink = ActorSink(self._world, plan[-1][0].transform.location, 10)
         # follow waypoints untill next intersection
@@ -120,6 +118,7 @@ class SignalizedJunctionLeftTurn(BasicScenario):
                                       blackboard_queue_name=self._blackboard_queue_name, avoid_collision=True)
         # wait
         wait = DriveDistance(self.ego_vehicle, self._ego_distance)
+
 
         # Behavior tree
         root = py_trees.composites.Parallel(
@@ -129,8 +128,28 @@ class SignalizedJunctionLeftTurn(BasicScenario):
         root.add_child(actor_sink)
         root.add_child(move_actor)
 
-        sequence.add_child(ActorTransformSetter(self.other_actors[0], self._other_actor_transform))
+        #move_actor_parallel = py_trees.composites.Parallel(
+        #        policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ONE)
+        #for i in [4]:
+        #    target_waypoint = generate_target_waypoint(
+        #        CarlaDataProvider.get_map().get_waypoint(self.other_actors[i].get_location()), 0)
+        #    plan = []
+        #    wp_choice = target_waypoint.next(1.0)
+        #    while not wp_choice[0].is_intersection:
+        #        target_waypoint = wp_choice[0]
+        #        plan.append((target_waypoint, RoadOption.LANEFOLLOW))
+        #        wp_choice = target_waypoint.next(1.0)
+        #    move_actor = WaypointFollower(self.other_actors[i], self._target_vel, plan=plan)
+        #    waypoint_follower_end = InTriggerDistanceToLocation(
+        #        self.other_actors[i], plan[-1][0].transform.location, 10)
+        #    move_actor_parallel.add_child(move_actor)
+        #    move_actor_parallel.add_child(waypoint_follower_end)
+        #move_actor_parallel.add_child(root)
+
+        sequence.add_child(ActorTransformSetter(self.other_actors[0],
+            self._other_actor_transforms[0]))
         sequence.add_child(root)
+        #sequence.add_child(move_actor_parallel)
         sequence.add_child(ActorDestroy(self.other_actors[0]))
 
         return sequence

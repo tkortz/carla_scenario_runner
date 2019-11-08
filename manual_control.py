@@ -125,9 +125,14 @@ class World(object):
         self.lane_invasion_sensor = LaneInvasionSensor(self.vehicle, self.hud)
         self.camera_manager = CameraManager(self.vehicle, self.hud)
         self.camera_manager.set_sensor(0, notify=False)
+        self.recording_enabled = False
         self.controller = None
         self._weather_presets = find_weather_presets()
         self._weather_index = 0
+        self.recording_start = 0
+        preset = self._weather_presets[self._weather_index]
+        self.hud.notification('Weather: %s' % preset[1])
+        self.vehicle.get_world().set_weather(preset[0])
 
     def restart(self):
         cam_index = self.camera_manager._index
@@ -150,6 +155,7 @@ class World(object):
     def next_weather(self, reverse=False):
         self._weather_index += -1 if reverse else 1
         self._weather_index %= len(self._weather_presets)
+        print("weather index {}".format(self._weather_index))
         preset = self._weather_presets[self._weather_index]
         self.hud.notification('Weather: %s' % preset[1])
         self.vehicle.get_world().set_weather(preset[0])
@@ -190,7 +196,7 @@ class KeyboardControl(object):
         world.vehicle.set_autopilot(self._autopilot_enabled)
         world.hud.notification("Press 'H' or '?' for help.", seconds=4.0)
 
-    def parse_events(self, world, clock):
+    def parse_events(self, client, world, clock):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return True
@@ -213,8 +219,32 @@ class KeyboardControl(object):
                     world.camera_manager.next_sensor()
                 elif event.key > K_0 and event.key <= K_9:
                     world.camera_manager.set_sensor(event.key - 1 - K_0)
-                elif event.key == K_r:
+                elif event.key == K_r and not (pygame.key.get_mods() & KMOD_CTRL):
                     world.camera_manager.toggle_recording()
+                elif event.key == K_r and (pygame.key.get_mods() & KMOD_CTRL):
+                    if (world.recording_enabled):
+                        client.stop_recorder()
+                        world.recording_enabled = False
+                        world.hud.notification("Recorder is OFF")
+                    else:
+                        client.start_recorder("{}.rec".format(world.vehicle.id))
+                        world.recording_enabled = True
+                        world.hud.notification("Recorder is ON, Hero ID: {}".format(world.vehicle.id))
+                        print("Hero ID: {}".format(world.vehicle.id))
+                elif event.key == K_p and (pygame.key.get_mods() & KMOD_CTRL):
+                    # stop recorder
+                    client.stop_recorder()
+                    world.recording_enabled = False
+                    # work around to fix camera at start of replaying
+                    currentIndex = world.camera_manager.index
+                    world.destroy_sensors()
+                    # disable autopilot
+                    self._autopilot_enabled = False
+                    world.player.set_autopilot(self._autopilot_enabled)
+                    world.hud.notification("Replaying file 'manual_recording.rec'")
+                    # replayer
+                    client.replay_file("manual_recording.rec", world.recording_start, 0, 0)
+                    world.camera_manager.set_sensor(currentIndex)
                 elif event.key == K_q:
                     self._control.reverse = not self._control.reverse
                 elif event.key == K_p:
@@ -617,15 +647,20 @@ def game_loop(args):
         clock = pygame.time.Clock()
         while True:
             clock.tick_busy_loop(60)
-            if controller.parse_events(world, clock):
+            if controller.parse_events(client, world, clock):
                 return
             if not world.tick(clock):
                 return
             world.render(display)
             pygame.display.flip()
+            #print("x:{},y:{},yaw:{}".format(world.vehicle.get_transform().location.x,
+            #    world.vehicle.get_transform().location.y,
+            #    world.vehicle.get_transform().rotation.yaw))
 
     finally:
 
+        if (world and world.recording_enabled):
+            client.stop_recorder()
         if world is not None:
             world.destroy()
 

@@ -69,7 +69,7 @@ class VehicleTurningRight(BasicScenario):
     """
 
     def __init__(self, world, ego_vehicle, config, randomize=False, debug_mode=False, criteria_enable=True,
-                 timeout=60):
+                 timeout=90):
         """
         Setup all relevant parameters and create scenario
         """
@@ -79,10 +79,10 @@ class VehicleTurningRight(BasicScenario):
         self._wmap = CarlaDataProvider.get_map()
         self._reference_waypoint = self._wmap.get_waypoint(config.trigger_point.location)
         self._trigger_location = config.trigger_point.location
-        self._other_actor_transform = None
+        self._other_actor_transforms = []
         self._num_lane_changes = 0
         # Timeout of scenario in seconds
-        self.timeout = timeout
+        self.timeout = 10000 #timeout
         # Total Number of attempts to relocate a vehicle before spawning
         self._number_of_attempts = 6
         # Number of attempts made so far
@@ -121,28 +121,40 @@ class VehicleTurningRight(BasicScenario):
 
         while True:
             try:
-                self._other_actor_transform = get_opponent_transform(_start_distance, waypoint,
-                                                                     self._trigger_location, last_waypoint_lane)
+                self._other_actor_transforms.append(get_opponent_transform(_start_distance, waypoint,
+                                                                     self._trigger_location,
+                                                                     last_waypoint_lane))
                 first_vehicle = CarlaActorPool.request_new_actor('vehicle.diamondback.century',
-                                                                 self._other_actor_transform)
+                                                                 self._other_actor_transforms[0])
                 first_vehicle.set_simulate_physics(enabled=False)
 
                 break
             except RuntimeError as r:
                 # In the case there is an object just move a little bit and retry
-                print("Base transform is blocking objects ", self._other_actor_transform)
+                print("Base transform is blocking objects ",
+                        self._other_actor_transforms[0])
                 _start_distance += 0.2
                 self._spawn_attempted += 1
                 if self._spawn_attempted >= self._number_of_attempts:
                     raise r
         # Set the transform to -500 z after we are able to spawn it
         actor_transform = carla.Transform(
-            carla.Location(self._other_actor_transform.location.x,
-                           self._other_actor_transform.location.y,
-                           self._other_actor_transform.location.z - 500),
-            self._other_actor_transform.rotation)
+            carla.Location(self._other_actor_transforms[0].location.x,
+                           self._other_actor_transforms[0].location.y,
+                           self._other_actor_transforms[0].location.z - 500),
+            self._other_actor_transforms[0].rotation)
         first_vehicle.set_transform(actor_transform)
         self.other_actors.append(first_vehicle)
+        for other_actor in config.other_actors:
+            self._other_actor_transforms.append(other_actor.transform)
+            vehicle_transform = carla.Transform(
+                    carla.Location(other_actor.transform.location.x,
+                        other_actor.transform.location.y,
+                        other_actor.transform.location.z),
+                    other_actor.transform.rotation)
+            vehicle = CarlaActorPool.request_new_actor(other_actor.model,
+                    vehicle_transform)
+            self.other_actors.append(vehicle)
 
     def _create_behavior(self):
         """
@@ -177,21 +189,39 @@ class VehicleTurningRight(BasicScenario):
         actor_ego_sync = py_trees.composites.Parallel(
             "Synchronization of actor and ego vehicle",
             policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ONE)
+        actor_ego_sync.add_child(actor_velocity)
+        actor_ego_sync.add_child(actor_traverse)
         after_timer_actor = py_trees.composites.Parallel(
             "After timout actor will cross the remaining lane_width",
             policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ONE)
 
+        move_actor_parallel = py_trees.composites.Parallel(
+            policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ONE)
+
+        #target_waypoint = generate_target_waypoint(
+        #    CarlaDataProvider.get_map().get_waypoint(self.other_actors[1].get_location()), 0)
+        #plan = []
+        #wp_choice = target_waypoint.next(1.0)
+        #while not wp_choice[0].is_intersection:
+        #    target_waypoint = wp_choice[0]
+        #    plan.append((target_waypoint, RoadOption.LANEFOLLOW))
+        #    wp_choice = target_waypoint.next(1.0)
+        #move_actor = WaypointFollower(self.other_actors[1], self._other_actor_target_velocity, plan=plan)
+        #waypoint_follower_end = InTriggerDistanceToLocation(
+        #    self.other_actors[1], plan[-1][0].transform.location, 10)
+        #move_actor_parallel.add_child(move_actor)
+        #move_actor_parallel.add_child(waypoint_follower_end)
+        move_actor_parallel.add_child(actor_ego_sync)
+
         # building the tree
         root.add_child(scenario_sequence)
-        scenario_sequence.add_child(ActorTransformSetter(self.other_actors[0], self._other_actor_transform,
-                                                         name='TransformSetterTS4'))
+        scenario_sequence.add_child(ActorTransformSetter(self.other_actors[0],
+            self._other_actor_transforms[0], name='TransformSetterTS4'))
         scenario_sequence.add_child(trigger_distance)
-        scenario_sequence.add_child(actor_ego_sync)
+        scenario_sequence.add_child(move_actor_parallel)
         scenario_sequence.add_child(after_timer_actor)
         scenario_sequence.add_child(end_condition)
         scenario_sequence.add_child(ActorDestroy(self.other_actors[0]))
-        actor_ego_sync.add_child(actor_velocity)
-        actor_ego_sync.add_child(actor_traverse)
 
         after_timer_actor.add_child(post_timer_velocity_actor)
         after_timer_actor.add_child(post_timer_traverse_actor)
@@ -224,7 +254,7 @@ class VehicleTurningLeft(BasicScenario):
     """
 
     def __init__(self, world, ego_vehicle, config, randomize=False, debug_mode=False, criteria_enable=True,
-                 timeout=60):
+                 timeout=90):
         """
         Setup all relevant parameters and create scenario
         """

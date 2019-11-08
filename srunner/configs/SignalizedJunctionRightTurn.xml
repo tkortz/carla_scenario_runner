@@ -3,6 +3,11 @@
     <scenario name="SignalizedJunctionRightTurn_1" type="SignalizedJunctionRightTurn" town="Town03">
         <ego_vehicle x="53" y="128.1" z="1" yaw="178" model="vehicle.lincoln.mkz2017" />
         <other_actor x="6" y="171" z="1" yaw="-90" model="vehicle.tesla.model3" />
+        <other_actor x="-10" y="70" z="1" yaw="90" model="vehicle.audi.tt" />
+        <other_actor x="-20" y="134" z="1" yaw="0" model="vehicle.nissan.patrol" />
+        <other_actor x="-30" y="134" z="1" yaw="0" model="vehicle.mini.cooperst" />
+        <other_actor x="-10" y="90" z="1" yaw="90" model="vehicle.seat.leon" />
+        <other_actor x="-10" y="100" z="1" yaw="90" model="vehicle.audi.tt" />
     </scenario>
     <scenario name="SignalizedJunctionRightTurn_2" type="SignalizedJunctionRightTurn" town="Town04">
         <ego_vehicle x="244.7" y="-249.4" z="1" yaw="180" model="vehicle.lincoln.mkz2017" />

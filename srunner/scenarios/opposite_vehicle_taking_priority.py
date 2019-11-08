@@ -62,7 +62,7 @@ class OppositeVehicleRunningRedLight(BasicScenario):
         and instantiate scenario manager
         """
 
-        self._other_actor_transform = None
+        self._other_actor_transforms = []
 
         # Timeout of scenario in seconds
         self.timeout = timeout
@@ -97,14 +97,16 @@ class OppositeVehicleRunningRedLight(BasicScenario):
         """
         Custom initialization
         """
-        self._other_actor_transform = config.other_actors[0].transform
-        first_vehicle_transform = carla.Transform(
-            carla.Location(config.other_actors[0].transform.location.x,
-                           config.other_actors[0].transform.location.y,
-                           config.other_actors[0].transform.location.z),
-            config.other_actors[0].transform.rotation)
-        first_vehicle = CarlaActorPool.request_new_actor(config.other_actors[0].model, first_vehicle_transform)
-        self.other_actors.append(first_vehicle)
+        for other_actor in config.other_actors:
+            self._other_actor_transforms.append(other_actor.transform)
+            vehicle_transform = carla.Transform(
+                    carla.Location(other_actor.transform.location.x,
+                        other_actor.transform.location.y,
+                        other_actor.transform.location.z),
+                    other_actor.transform.rotation)
+            vehicle = CarlaActorPool.request_new_actor(other_actor.model,
+                    vehicle_transform)
+            self.other_actors.append(vehicle)
 
     def _create_behavior(self):
         """
@@ -178,14 +180,36 @@ class OppositeVehicleRunningRedLight(BasicScenario):
             self._ego_distance_to_drive,
             name="DriveDistance")
 
+        move_actor_parallel = py_trees.composites.Parallel(
+                policy=py_trees.common.ParallelPolicy.SUCCESS_ON_ONE)
+        for i in [4, 5, 6]:
+            target_waypoint = generate_target_waypoint(
+                CarlaDataProvider.get_map().get_waypoint(self.other_actors[i].get_location()), 0)
+            plan = []
+            wp_choice = target_waypoint.next(1.0)
+            while not wp_choice[0].is_intersection:
+                target_waypoint = wp_choice[0]
+                plan.append((target_waypoint, RoadOption.LANEFOLLOW))
+                wp_choice = target_waypoint.next(1.0)
+            move_actor = WaypointFollower(self.other_actors[i], self._other_actor_target_velocity, plan=plan)
+            waypoint_follower_end = InTriggerDistanceToLocation(
+                self.other_actors[i], plan[-1][0].transform.location, 10)
+            move_actor_parallel.add_child(move_actor)
+            move_actor_parallel.add_child(waypoint_follower_end)
+
         # Build behavior tree
         sequence = py_trees.composites.Sequence("Sequence Behavior")
-        sequence.add_child(ActorTransformSetter(self.other_actors[0], self._other_actor_transform))
-        sequence.add_child(startcondition)
-        sequence.add_child(sync_arrival_parallel)
-        sequence.add_child(continue_driving)
-        sequence.add_child(wait)
-        sequence.add_child(ActorDestroy(self.other_actors[0]))
+        crossing_sequence = py_trees.composites.Sequence("Sequence Behavior")
+        sequence.add_child(ActorTransformSetter(self.other_actors[0],
+            self._other_actor_transforms[0]))
+        #crossing_sequence.add_child(startcondition)
+        crossing_sequence.add_child(sync_arrival_parallel)
+        crossing_sequence.add_child(continue_driving)
+        crossing_sequence.add_child(wait)
+        move_actor_parallel.add_child(crossing_sequence)
+        sequence.add_child(move_actor_parallel)
+        for i in range(len(self.other_actors)):
+            sequence.add_child(ActorDestroy(self.other_actors[i]))
 
         return sequence
 
