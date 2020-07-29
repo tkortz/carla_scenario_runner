@@ -48,17 +48,24 @@ class OtherLeadingVehicle(BasicScenario):
         """
         self._world = world
         self._map = CarlaDataProvider.get_map()
-        self._first_vehicle_location = 35
+        if config.name == "OtherLeadingVehicle_8":
+            self._first_vehicle_location = 50
+        else:
+            self._first_vehicle_location = 35
         self._second_vehicle_location = self._first_vehicle_location + 1
         self._ego_vehicle_drive_distance = self._first_vehicle_location * 4
         self._first_vehicle_speed = 55
         self._second_vehicle_speed = 45
         self._reference_waypoint = self._map.get_waypoint(config.trigger_point.location)
         self._other_actor_max_brake = 1.0
-        self._first_actor_transform = None
-        self._second_actor_transform = None
+        self._other_actor_transforms = []
         # Timeout of scenario in seconds
         self.timeout = timeout
+
+        # Used for additional actors
+        self._left_lane_speed = 67
+        self._middle_lane_speed = 55
+        self._right_lane_speed = 50
 
         super(OtherLeadingVehicle, self).__init__("VehicleDeceleratingInMultiLaneSetUp",
                                                   ego_vehicle,
@@ -86,8 +93,19 @@ class OtherLeadingVehicle(BasicScenario):
         self.other_actors.append(first_vehicle)
         self.other_actors.append(second_vehicle)
 
-        self._first_actor_transform = first_vehicle_transform
-        self._second_actor_transform = second_vehicle_transform
+        self._other_actor_transforms.append(first_vehicle_transform)
+        self._other_actor_transforms.append(second_vehicle_transform)
+
+        for other_actor in config.other_actors:
+            self._other_actor_transforms.append(other_actor.transform)
+            vehicle_transform = carla.Transform(
+                    carla.Location(other_actor.transform.location.x,
+                                   other_actor.transform.location.y,
+                                   other_actor.transform.location.z),
+                    other_actor.transform.rotation)
+            vehicle = CarlaActorPool.request_new_actor(other_actor.model,
+                                                       vehicle_transform)
+            self.other_actors.append(vehicle)
 
     def _create_behavior(self):
         """
@@ -128,11 +146,46 @@ class OtherLeadingVehicle(BasicScenario):
         driving_in_same_direction.add_child(WaypointFollower(self.other_actors[1], self._second_vehicle_speed,
                                                              avoid_collision=True))
 
-        sequence.add_child(ActorTransformSetter(self.other_actors[0], self._first_actor_transform))
-        sequence.add_child(ActorTransformSetter(self.other_actors[1], self._second_actor_transform))
+        # Add the rest of the vehicles (assumes three lanes each direction, going straight-ish)
+        for i in range(2, len(self.other_actors)):
+            if self._other_actor_transforms[i].rotation.yaw < 0:
+                # Same direction as ego vehicle
+                if (self._other_actor_transforms[i].location.x < -233 and self._other_actor_transforms[i].location.y < 120) or \
+                   (self._other_actor_transforms[i].location.x < -230 and self._other_actor_transforms[i].location.y > 120):
+                    # Left lane
+                    driving_in_same_direction.add_child(WaypointFollower(self.other_actors[i], self._left_lane_speed,
+                                                                         avoid_collision=True))
+                elif (self._other_actor_transforms[i].location.x < -230 and self._other_actor_transforms[i].location.y < 120) or \
+                     (self._other_actor_transforms[i].location.x < -227 and self._other_actor_transforms[i].location.y > 120):
+                    # Middle lane
+                    driving_in_same_direction.add_child(WaypointFollower(self.other_actors[i], self._middle_lane_speed,
+                                                                         avoid_collision=True))
+                else:
+                    # Right lane
+                    driving_in_same_direction.add_child(WaypointFollower(self.other_actors[i], self._right_lane_speed,
+                                                                         avoid_collision=True))
+            else:
+                # Opposite direction
+                if (self._other_actor_transforms[i].location.x < -247 and self._other_actor_transforms[i].location.y > -100) or \
+                   (-232 < self._other_actor_transforms[i].location.x < -230 and self._other_actor_transforms[i].location.y < -100):
+                    # Right lane
+                    driving_in_same_direction.add_child(WaypointFollower(self.other_actors[i], self._right_lane_speed,
+                                                                         avoid_collision=True))
+                elif (self._other_actor_transforms[i].location.x < -243 and self._other_actor_transforms[i].location.y > -100) or \
+                     (self._other_actor_transforms[i].location.x < -238 and self._other_actor_transforms[i].location.y < -100):
+                    # Middle lane
+                    driving_in_same_direction.add_child(WaypointFollower(self.other_actors[i], self._middle_lane_speed,
+                                                                         avoid_collision=True))
+                else:
+                    # Left lane
+                    driving_in_same_direction.add_child(WaypointFollower(self.other_actors[i], self._left_lane_speed,
+                                                                         avoid_collision=True))
+
+        for (i, transform) in enumerate(self._other_actor_transforms):
+            sequence.add_child(ActorTransformSetter(self.other_actors[i], transform))
         sequence.add_child(parallel_root)
-        sequence.add_child(ActorDestroy(self.other_actors[0]))
-        sequence.add_child(ActorDestroy(self.other_actors[1]))
+        for actor in self.other_actors:
+            sequence.add_child(ActorDestroy(actor))
 
         return sequence
 

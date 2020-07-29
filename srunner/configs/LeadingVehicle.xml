@@ -22,7 +22,18 @@
         <ego_vehicle x="125.5" y="225.1" z="0" yaw="-25" model="vehicle.lincoln.mkz2017" />
     </scenario>
     <scenario name="OtherLeadingVehicle_8" type="OtherLeadingVehicle" town="Town05">
-        <ego_vehicle x="-226.9" y="100" z="11" yaw="-88" model="vehicle.lincoln.mkz2017" />
+        <ego_vehicle x="-226.6" y="80" z="11" yaw="-88" model="vehicle.lincoln.mkz2017" />
+        <!-- Same direction as ego vehicle -->
+        <other_actor x="-230.2" y="82"  z="11" yaw="-90" model="vehicle.tesla.model3" />
+        <other_actor x="-233.4" y="50"  z="11" yaw="-92" model="vehicle.citroen.c3" />
+        <other_actor x="-233.4" y="100" z="11" yaw="-90" model="vehicle.toyota.prius" />
+        <other_actor x="-225.9" y="0"   z="11" yaw="-90" model="vehicle.ford.mustang" />
+        <!-- Opposite direction from ego vehicle -->
+        <other_actor x="-240.5" y="-95"  z="11" yaw="90" model="vehicle.tesla.model3" />
+        <other_actor x="-247.2" y="-60"  z="11" yaw="90" model="vehicle.toyota.prius" />
+        <other_actor x="-238.4" y="-135"  z="11" yaw="112" model="vehicle.bmw.isetta" />
+        <other_actor x="-230.2" y="-145"  z="11" yaw="112" model="vehicle.seat.leon" />
+        <other_actor x="-229.4" y="-160"  z="11" yaw="124" model="vehicle.bmw.grandtourer" />
     </scenario>
     <scenario name="OtherLeadingVehicle_9" type="OtherLeadingVehicle" town="Town05">
         <ego_vehicle x="-10" y="191.1" z="3" yaw="-180" model="vehicle.lincoln.mkz2017" />
